@@ -1,5 +1,9 @@
 package br.usc.segusc.autenticacao.impl;
 
+import java.util.ArrayList;
+import java.util.List;
+import java.util.function.Predicate;
+
 import br.usc.segusc.log.entity.LogLevel;
 import br.usc.segusc.log.services.ILogService;
 import br.usc.segusc.log.services.LogFactory;
@@ -21,8 +25,8 @@ import br.usc.segusc.criptografia.services.CriptografiaFactory;
 import br.usc.segusc.criptografia.services.ICriptografiaService;
 import br.usc.segusc.repositorio.services.IRepositorioService;
 import br.usc.segusc.repositorio.services.RepositorioFactory;
+
 /**
- *
  * Componente de Autenticação para projeto da disciplina de PSOO 
  * @author André Luis Pelisoli
  * @author Bruno Rocha Roma
@@ -46,7 +50,11 @@ import br.usc.segusc.repositorio.services.RepositorioFactory;
  *
  */
 public class Autenticacao implements IAutenticacaoService {
-
+	private List<Usuario> lstLogin;
+	private Predicate<Usuario> filtro;
+	public Autenticacao() {
+		lstLogin = new ArrayList<Usuario>();
+	}
 	@Override
 	public Usuario autenticar(Usuario usuario, TipoAutenticacao tipo) throws AutenticacaoInvalidaException {
 		//Obtendo o logger do sistema
@@ -70,8 +78,24 @@ public class Autenticacao implements IAutenticacaoService {
 		
 		//levantando o tipo de criptografia a ser usada na senha
 		String senhaCifrada="", tipocriptografica="MD5";
+
+		//Adicionando o usuário a lista para checar quantas tentativas frustradas ocorreram
+		lstLogin.add(usuario);
 		
+		//criando predicate para filtrar os valores
+		filtro = v -> v.getLogin().equals(usuario.getLogin());
+		
+		//obtendo a quantidade de logins falhos
+		int qtdeLogin = (int) lstLogin.stream().filter(filtro).count();
+				
 		try {
+			//verificando se o usuário está bloqueado
+			log.logger(LogLevel.INFO, "Verificando se o usuário possui outras tentantivas de login.");
+			if ( qtdeLogin>3 ){
+				log.logger(LogLevel.WARNING, "Usuário "+usuario.getLogin()+" está bloqueado!");
+				throw new AutenticacaoInvalidaException("Usuário "+usuario.getLogin()+" está bloqueado!");
+			}
+			
 			//obtendo o tipo de criptografia via configuracao
 			log.logger(LogLevel.INFO, "Obtendo o método de criptografia");
 			tipocriptografica=config.getValue("CRIPTGRAFIA");
@@ -89,12 +113,20 @@ public class Autenticacao implements IAutenticacaoService {
 				log.logger(LogLevel.INFO, "Obtendo o repositório do usuário "+usuario.getLogin());
 				if (repositorio.consultarLogin(usuario.getLogin())==null)
 					throw new AutenticacaoInvalidaException("Login não encontrado!"); //login não encontrado
-				
+
 				//checando a senha no repositório
 				log.logger(LogLevel.INFO, "Validando a senha do usuário "+usuario.getLogin());
-				if (!repositorio.consultarLogin(usuario.getLogin()).equals(senhaCifrada))
+				if (!repositorio.consultarLogin(usuario.getLogin()).equals(senhaCifrada)){
+					qtdeLogin = (int) lstLogin.stream().filter(filtro).count();
+					if (qtdeLogin<3)
+						log.logger(LogLevel.WARNING, "Tentativas frustradas do " + 
+									usuario.getLogin()+ " " + qtdeLogin );
+					else
+						log.logger(LogLevel.WARNING, "Usuário "+usuario.getLogin()+ 
+									" foi bloqueado, possuí " + qtdeLogin + " tentativas!");
+
 					throw new AutenticacaoInvalidaException("Senha Inválida!"); //Senha errada
-				
+				}
 				break;
 			case BIOMETRIA:
 				//Obtendo a biometria
@@ -106,6 +138,9 @@ public class Autenticacao implements IAutenticacaoService {
 				biom.scanear(usuario.getBiometria());
 				break;
 			}
+			//retirando os usuários da lista
+			lstLogin.removeIf(filtro);
+			
 			//Obtendo o perfil do usuário
 			log.logger(LogLevel.INFO, "Obtendo o perfil do usuário "+usuario.getLogin()+
 									  " e já o setando ao objeto usuário");
