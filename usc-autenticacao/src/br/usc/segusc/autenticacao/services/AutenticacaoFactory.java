@@ -39,6 +39,6 @@ public class AutenticacaoFactory {
 	 * @return IAutenticacaoService - retorna a interface IAutenticacaoService
 	 */
 	public static IAutenticacaoService getAutenticacaoServiceImpl(){
-		return autent.aut;
+		return getInstance().aut;
 	}
 }
