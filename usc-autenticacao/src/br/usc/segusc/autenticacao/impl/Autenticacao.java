@@ -10,6 +10,7 @@ import br.usc.segusc.log.services.LogFactory;
 import br.usc.segusc.autenticacao.entity.TipoAutenticacao;
 import br.usc.segusc.autenticacao.entity.Usuario;
 import br.usc.segusc.autenticacao.exception.AutenticacaoInvalidaException;
+import br.usc.segusc.autenticacao.exception.AutenticacaoUserBlockedException;
 import br.usc.segusc.autenticacao.services.AutenticacaoFactory;
 import br.usc.segusc.autenticacao.services.IAutenticacaoService;
 import br.usc.segusc.autorizacao.services.AutorizacaoFactory;
@@ -93,7 +94,7 @@ public class Autenticacao implements IAutenticacaoService {
 			log.logger(LogLevel.INFO, "Verificando se o usuário possui outras tentantivas de login.");
 			if ( qtdeLogin>3 ){
 				log.logger(LogLevel.WARNING, "Usuário "+usuario.getLogin()+" está bloqueado!");
-				throw new AutenticacaoInvalidaException("Usuário "+usuario.getLogin()+" está bloqueado!");
+				throw new AutenticacaoUserBlockedException();
 			}
 			
 			//obtendo o tipo de criptografia via configuracao
@@ -117,14 +118,8 @@ public class Autenticacao implements IAutenticacaoService {
 				//checando a senha no repositório
 				log.logger(LogLevel.INFO, "Validando a senha do usuário "+usuario.getLogin());
 				if (!repositorio.consultarLogin(usuario.getLogin()).equals(senhaCifrada)){
-					qtdeLogin = (int) lstLogin.stream().filter(filtro).count();
-					if (qtdeLogin<3)
-						log.logger(LogLevel.WARNING, "Tentativas frustradas do " + 
-									usuario.getLogin()+ " " + qtdeLogin );
-					else
-						log.logger(LogLevel.WARNING, "Usuário "+usuario.getLogin()+ 
-									" foi bloqueado, possuí " + qtdeLogin + " tentativas!");
-
+					log.logger(LogLevel.WARNING, "Tentativas frustradas do " + 
+								usuario.getLogin()+ " " + qtdeLogin );
 					throw new AutenticacaoInvalidaException("Senha Inválida!"); //Senha errada
 				}
 				break;
@@ -135,7 +130,15 @@ public class Autenticacao implements IAutenticacaoService {
 				
 				//verificando a biometria, caso não encontrada será gerada uma exceção
 				log.logger(LogLevel.INFO, "Obtendo a Biometria do usuário "+usuario.getLogin());
-				biom.scanear(usuario.getBiometria());
+				
+				log.logger(LogLevel.INFO, "Mostrando a Biometria do usuário "+usuario.getBiometria().toString());
+				try {
+					biom.scanear(usuario.getBiometria());
+				} catch (BiometriaInvalidaException e){
+					log.logger(LogLevel.WARNING, "Tentativas frustradas do " + 
+								usuario.getLogin()+ " " + qtdeLogin );
+					throw e;
+				}
 				break;
 			}
 			//retirando os usuários da lista
@@ -154,9 +157,12 @@ public class Autenticacao implements IAutenticacaoService {
 			//Retornando o usuário com os dados
 			log.logger(LogLevel.INFO, "Retornando o usuário "+usuario.getLogin());
 			return usuario;
+		} catch (AutenticacaoUserBlockedException e) {
+			LogFactory.getLogServiceImpl().logger(LogLevel.ERROR, e.getMessage());
+			throw e;
 		} catch (Exception e) {
 			LogFactory.getLogServiceImpl().logger(LogLevel.ERROR, e.getMessage());
-			throw new AutenticacaoInvalidaException();
+			throw new AutenticacaoInvalidaException(e.getMessage());
 		}
 	}
 }
